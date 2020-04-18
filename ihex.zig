@@ -51,7 +51,8 @@ pub const Record = union(enum) {
     };
 };
 
-/// Parses raw
+/// Parses intel hex records from the stream, using `mode` as parser configuration.
+/// For each record, `loader` is called with `context` as the first parameter.
 pub fn parseRaw(stream: var, mode: ParseMode, context: var, loader: fn (@TypeOf(context), record: Record) void) !void {
     while (true) {
         var b = stream.readByte() catch |err| {
@@ -61,7 +62,7 @@ pub fn parseRaw(stream: var, mode: ParseMode, context: var, loader: fn (@TypeOf(
         };
         if (b != ':') {
             if (b != '\n' and b != '\r' and mode.pedantic) {
-                return error.InvalidFormat;
+                return error.InvalidCharacter;
             } else {
                 continue;
             }
@@ -147,6 +148,8 @@ pub fn parseRaw(stream: var, mode: ParseMode, context: var, loader: fn (@TypeOf(
     }
 }
 
+/// Parses intel hex data segments from the stream, using `mode` as parser configuration.
+/// For each data record, `loader` is called with `context` as the first parameter.
 pub fn parseData(stream: var, mode: ParseMode, context: var, loader: fn (@TypeOf(context), offset: u32, record: []const u8) void) !?u32 {
     const Parser = struct {
         entry_point: ?u32,
@@ -166,7 +169,7 @@ pub fn parseData(stream: var, mode: ParseMode, context: var, loader: fn (@TypeOf
                 .start_segment_address => |addr| parser.entry_point = 16 * @as(u32, addr.segment) + @as(u32, addr.offset),
 
                 // Newschool offsets
-                .extended_linear_address => |addr| {},
+                .extended_linear_address => |addr| parser.current_offset = @as(u32, addr.upperWord) << 16,
                 .start_linear_address => |addr| parser.entry_point = addr.offset,
             }
         }
@@ -209,7 +212,6 @@ const TestVerifier = struct {
     index: usize = 0,
 
     fn process(verifier: *TestVerifier, record: Record) void {
-        // std.debug.warn("{}\n", .{record});
         switch (verifier.index) {
             0 => {
                 std.testing.expectEqual(@as(u16, 16), record.data.offset);
@@ -244,7 +246,7 @@ test "ihex lax" {
 }
 
 test "huge file parseRaw" {
-    var file = try std.fs.cwd().openFile("huge.ihex", .{ .read = true, .write = false });
+    var file = try std.fs.cwd().openFile("data/huge.ihex", .{ .read = true, .write = false });
     defer file.close();
 
     try parseRaw(file.inStream(), ParseMode{ .pedantic = true }, {}, struct {
@@ -253,10 +255,19 @@ test "huge file parseRaw" {
 }
 
 test "huge file parseData" {
-    var file = try std.fs.cwd().openFile("huge.ihex", .{ .read = true, .write = false });
+    var file = try std.fs.cwd().openFile("data/huge.ihex", .{ .read = true, .write = false });
     defer file.close();
 
     _ = try parseData(file.inStream(), ParseMode{ .pedantic = true }, {}, struct {
         fn parse(x: void, offset: u32, data: []const u8) void {}
     }.parse);
+}
+
+fn ignoreRecords(x: void, offset: u32, data: []const u8) void {}
+
+test "parseData" {
+    var stream = std.io.fixedBufferStream(pedanticTestData).inStream();
+    const ep = try parseData(stream, ParseMode{ .pedantic = true }, {}, ignoreRecords);
+
+    std.testing.expectEqual(@as(u32, 205), ep.?);
 }
