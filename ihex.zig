@@ -53,7 +53,7 @@ pub const Record = union(enum) {
 
 /// Parses intel hex records from the stream, using `mode` as parser configuration.
 /// For each record, `loader` is called with `context` as the first parameter.
-pub fn parseRaw(stream: var, mode: ParseMode, context: var, loader: fn (@TypeOf(context), record: Record) void) !void {
+pub fn parseRaw(stream: var, mode: ParseMode, context: var, Errors: type, loader: fn (@TypeOf(context), record: Record) Errors!void) !void {
     while (true) {
         var b = stream.readByte() catch |err| {
             if (err == error.EndOfStream and !mode.pedantic)
@@ -104,10 +104,10 @@ pub fn parseRaw(stream: var, mode: ParseMode, context: var, loader: fn (@TypeOf(
                     .data = temp_data[0..byte_count],
                 };
 
-                loader(context, Record{ .data = data });
+                try loader(context, Record{ .data = data });
             },
             0x01 => {
-                loader(context, Record{ .end_of_file = {} });
+                try loader(context, Record{ .end_of_file = {} });
                 return;
             },
             0x02 => {
@@ -116,7 +116,7 @@ pub fn parseRaw(stream: var, mode: ParseMode, context: var, loader: fn (@TypeOf(
                 const addr = Record.ExtendedSegmentAddress{
                     .segment = std.fmt.parseInt(u16, line[8..12], 16) catch return error.InvalidRecord,
                 };
-                loader(context, Record{ .extended_segment_address = addr });
+                try loader(context, Record{ .extended_segment_address = addr });
             },
             0x03 => {
                 if (byte_count != 4)
@@ -125,7 +125,7 @@ pub fn parseRaw(stream: var, mode: ParseMode, context: var, loader: fn (@TypeOf(
                     .segment = std.fmt.parseInt(u16, line[8..12], 16) catch return error.InvalidRecord,
                     .offset = std.fmt.parseInt(u16, line[12..16], 16) catch return error.InvalidRecord,
                 };
-                loader(context, Record{ .start_segment_address = addr });
+                try loader(context, Record{ .start_segment_address = addr });
             },
             0x04 => {
                 if (byte_count != 2)
@@ -133,7 +133,7 @@ pub fn parseRaw(stream: var, mode: ParseMode, context: var, loader: fn (@TypeOf(
                 const addr = Record.ExtendedLinearAddress{
                     .upperWord = std.fmt.parseInt(u16, line[8..12], 16) catch return error.InvalidRecord,
                 };
-                loader(context, Record{ .extended_linear_address = addr });
+                try loader(context, Record{ .extended_linear_address = addr });
             },
             0x05 => {
                 if (byte_count != 4)
@@ -141,7 +141,7 @@ pub fn parseRaw(stream: var, mode: ParseMode, context: var, loader: fn (@TypeOf(
                 const addr = Record.LinearStartAddress{
                     .offset = std.fmt.parseInt(u32, line[8..16], 16) catch return error.InvalidRecord,
                 };
-                loader(context, Record{ .start_linear_address = addr });
+                try loader(context, Record{ .start_linear_address = addr });
             },
             else => return error.InvalidRecord,
         }
@@ -150,19 +150,19 @@ pub fn parseRaw(stream: var, mode: ParseMode, context: var, loader: fn (@TypeOf(
 
 /// Parses intel hex data segments from the stream, using `mode` as parser configuration.
 /// For each data record, `loader` is called with `context` as the first parameter.
-pub fn parseData(stream: var, mode: ParseMode, context: var, loader: fn (@TypeOf(context), offset: u32, record: []const u8) void) !?u32 {
+pub fn parseData(stream: var, mode: ParseMode, context: var, Errors: type, loader: fn (@TypeOf(context), offset: u32, record: []const u8) Errors!void) !?u32 {
     const Parser = struct {
         entry_point: ?u32,
         current_offset: u32,
 
         _context: @TypeOf(context),
-        _loader: fn (@TypeOf(context), offset: u32, record: []const u8) void,
+        _loader: fn (@TypeOf(context), offset: u32, record: []const u8) Errors!void,
 
-        fn load(parser: *@This(), record: Record) void {
+        fn load(parser: *@This(), record: Record) Errors!void {
             switch (record) {
                 // Basic records
                 .end_of_file => {},
-                .data => |data| parser._loader(parser._context, parser.current_offset + data.offset, data.data),
+                .data => |data| try parser._loader(parser._context, parser.current_offset + data.offset, data.data),
 
                 // Oldschool offsets
                 .extended_segment_address => |addr| parser.current_offset = 16 * @as(u32, addr.segment),
@@ -182,7 +182,7 @@ pub fn parseData(stream: var, mode: ParseMode, context: var, loader: fn (@TypeOf
         ._loader = loader,
     };
 
-    try parseRaw(stream, mode, &parser, Parser.load);
+    try parseRaw(stream, mode, &parser, Errors, Parser.load);
 
     return parser.entry_point;
 }
@@ -211,7 +211,7 @@ const laxTestData =
 const TestVerifier = struct {
     index: usize = 0,
 
-    fn process(verifier: *TestVerifier, record: Record) void {
+    fn process(verifier: *TestVerifier, record: Record) !void {
         switch (verifier.index) {
             0 => {
                 std.testing.expectEqual(@as(u16, 16), record.data.offset);
@@ -235,39 +235,37 @@ test "ihex pedantic" {
     var stream = std.io.fixedBufferStream(pedanticTestData).inStream();
 
     var verifier = TestVerifier{};
-    try parseRaw(stream, ParseMode{ .pedantic = true }, &verifier, TestVerifier.process);
+    try parseRaw(stream, ParseMode{ .pedantic = true }, &verifier, error{}, TestVerifier.process);
 }
 
 test "ihex lax" {
     var stream = std.io.fixedBufferStream(laxTestData).inStream();
 
     var verifier = TestVerifier{};
-    try parseRaw(stream, ParseMode{ .pedantic = false }, &verifier, TestVerifier.process);
+    try parseRaw(stream, ParseMode{ .pedantic = false }, &verifier, error{}, TestVerifier.process);
 }
 
 test "huge file parseRaw" {
     var file = try std.fs.cwd().openFile("data/huge.ihex", .{ .read = true, .write = false });
     defer file.close();
 
-    try parseRaw(file.inStream(), ParseMode{ .pedantic = true }, {}, struct {
-        fn parse(x: void, record: Record) void {}
+    try parseRaw(file.inStream(), ParseMode{ .pedantic = true }, {}, error{}, struct {
+        fn parse(x: void, record: Record) !void {}
     }.parse);
 }
+
+fn ignoreRecords(x: void, offset: u32, data: []const u8) !void {}
 
 test "huge file parseData" {
     var file = try std.fs.cwd().openFile("data/huge.ihex", .{ .read = true, .write = false });
     defer file.close();
 
-    _ = try parseData(file.inStream(), ParseMode{ .pedantic = true }, {}, struct {
-        fn parse(x: void, offset: u32, data: []const u8) void {}
-    }.parse);
+    _ = try parseData(file.inStream(), ParseMode{ .pedantic = true }, {}, error{}, ignoreRecords);
 }
-
-fn ignoreRecords(x: void, offset: u32, data: []const u8) void {}
 
 test "parseData" {
     var stream = std.io.fixedBufferStream(pedanticTestData).inStream();
-    const ep = try parseData(stream, ParseMode{ .pedantic = true }, {}, ignoreRecords);
+    const ep = try parseData(stream, ParseMode{ .pedantic = true }, {}, error{}, ignoreRecords);
 
     std.testing.expectEqual(@as(u32, 205), ep.?);
 }
