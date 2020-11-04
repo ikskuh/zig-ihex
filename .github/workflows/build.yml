@@ -1,0 +1,58 @@
+name: Build
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  schedule:
+    - cron: "0 5 * * *" # run at 5 AM UTC
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: "recursive"
+
+      - name: Setup Zig
+        uses: goto-bus-stop/setup-zig@v1.2.3
+        with:
+          version: master
+
+      - name: Run test suite
+        run: |
+          zig test ihex.zig
+
+  macosx:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: "recursive"
+
+      - name: Setup Zig
+        uses: goto-bus-stop/setup-zig@v1.2.3
+        with:
+          version: master
+
+      - name: Run test suite
+        run: |
+          zig test ihex.zig
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: "recursive"
+
+      - name: Setup Zig
+        uses: goto-bus-stop/setup-zig@v1.2.3
+        with:
+          version: master
+
+      - name: Run test suite
+        run: |
+          zig test ihex.zig
