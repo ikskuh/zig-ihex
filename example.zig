@@ -1,7 +1,7 @@
 const std = @import("std");
 const ihex = @import("ihex.zig");
 
-fn processData(x: void, offset: u32, data: []const u8) !void {
+fn processData(_: void, offset: u32, data: []const u8) !void {
     std.debug.warn("read slice @ 0x{x}: {x}\n", .{ offset, data });
 }
 

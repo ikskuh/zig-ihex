@@ -211,20 +211,20 @@ const laxTestData =
 const TestVerifier = struct {
     index: usize = 0,
 
-    fn process(verifier: *TestVerifier, record: Record) !void {
+    fn process(verifier: *TestVerifier, record: Record) error{ TestUnexpectedResult, TestExpectedEqual }!void {
         switch (verifier.index) {
             0 => {
-                std.testing.expectEqual(@as(u16, 16), record.data.offset);
-                std.testing.expectEqualSlices(u8, "address gap", record.data.data);
+                try std.testing.expectEqual(@as(u16, 16), record.data.offset);
+                try std.testing.expectEqualSlices(u8, "address gap", record.data.data);
             },
-            1 => std.testing.expectEqual(@as(u16, 4608), record.extended_segment_address.segment),
+            1 => try std.testing.expectEqual(@as(u16, 4608), record.extended_segment_address.segment),
             2 => {
-                std.testing.expectEqual(@as(u16, 0), record.start_segment_address.segment);
-                std.testing.expectEqual(@as(u16, 14336), record.start_segment_address.offset);
+                try std.testing.expectEqual(@as(u16, 0), record.start_segment_address.segment);
+                try std.testing.expectEqual(@as(u16, 14336), record.start_segment_address.offset);
             },
-            3 => std.testing.expectEqual(@as(u16, 65535), record.extended_linear_address.upperWord),
-            4 => std.testing.expectEqual(@as(u32, 205), record.start_linear_address.offset),
-            5 => std.testing.expect(record == .end_of_file),
+            3 => try std.testing.expectEqual(@as(u16, 65535), record.extended_linear_address.upperWord),
+            4 => try std.testing.expectEqual(@as(u32, 205), record.start_linear_address.offset),
+            5 => try std.testing.expect(record == .end_of_file),
             else => @panic("too many records!"),
         }
         verifier.index += 1;
@@ -235,37 +235,44 @@ test "ihex pedantic" {
     var stream = std.io.fixedBufferStream(pedanticTestData).reader();
 
     var verifier = TestVerifier{};
-    try parseRaw(stream, ParseMode{ .pedantic = true }, &verifier, error{}, TestVerifier.process);
+    try parseRaw(stream, ParseMode{ .pedantic = true }, &verifier, error{ TestUnexpectedResult, TestExpectedEqual }, TestVerifier.process);
 }
 
 test "ihex lax" {
     var stream = std.io.fixedBufferStream(laxTestData).reader();
 
     var verifier = TestVerifier{};
-    try parseRaw(stream, ParseMode{ .pedantic = false }, &verifier, error{}, TestVerifier.process);
+    try parseRaw(stream, ParseMode{ .pedantic = false }, &verifier, error{ TestUnexpectedResult, TestExpectedEqual }, TestVerifier.process);
 }
 
 test "huge file parseRaw" {
     var file = try std.fs.cwd().openFile("data/huge.ihex", .{ .read = true, .write = false });
     defer file.close();
 
-    try parseRaw(file.reader(), ParseMode{ .pedantic = true }, {}, error{}, struct {
-        fn parse(x: void, record: Record) !void {}
+    try parseRaw(file.reader(), ParseMode{ .pedantic = true }, {}, EmptyErrorSet, struct {
+        fn parse(_: void, record: Record) EmptyErrorSet!void {
+            _ = record;
+        }
     }.parse);
 }
 
-fn ignoreRecords(x: void, offset: u32, data: []const u8) !void {}
+const EmptyErrorSet = error{};
+fn ignoreRecords(x: void, offset: u32, data: []const u8) EmptyErrorSet!void {
+    _ = x;
+    _ = offset;
+    _ = data;
+}
 
 test "huge file parseData" {
     var file = try std.fs.cwd().openFile("data/huge.ihex", .{ .read = true, .write = false });
     defer file.close();
 
-    _ = try parseData(file.reader(), ParseMode{ .pedantic = true }, {}, error{}, ignoreRecords);
+    _ = try parseData(file.reader(), ParseMode{ .pedantic = true }, {}, EmptyErrorSet, ignoreRecords);
 }
 
 test "parseData" {
     var stream = std.io.fixedBufferStream(pedanticTestData).reader();
-    const ep = try parseData(stream, ParseMode{ .pedantic = true }, {}, error{}, ignoreRecords);
+    const ep = try parseData(stream, ParseMode{ .pedantic = true }, {}, EmptyErrorSet, ignoreRecords);
 
-    std.testing.expectEqual(@as(u32, 205), ep.?);
+    try std.testing.expectEqual(@as(u32, 205), ep.?);
 }
