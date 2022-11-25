@@ -53,7 +53,7 @@ pub const Record = union(enum) {
 
 /// Parses intel hex records from the stream, using `mode` as parser configuration.
 /// For each record, `loader` is called with `context` as the first parameter.
-pub fn parseRaw(stream: anytype, mode: ParseMode, context: anytype, Errors: type, loader: fn (@TypeOf(context), record: Record) Errors!void) !void {
+pub fn parseRaw(stream: anytype, mode: ParseMode, context: anytype, comptime Errors: type, loader: fn (@TypeOf(context), record: Record) Errors!void) (Errors || @TypeOf(stream).Error || error{EndOfStream,InvalidCharacter,InvalidRecord,InvalidChecksum}) !void {
     while (true) {
         var b = stream.readByte() catch |err| {
             if (err == error.EndOfStream and !mode.pedantic)
@@ -150,13 +150,13 @@ pub fn parseRaw(stream: anytype, mode: ParseMode, context: anytype, Errors: type
 
 /// Parses intel hex data segments from the stream, using `mode` as parser configuration.
 /// For each data record, `loader` is called with `context` as the first parameter.
-pub fn parseData(stream: anytype, mode: ParseMode, context: anytype, Errors: type, loader: fn (@TypeOf(context), offset: u32, record: []const u8) Errors!void) !?u32 {
+pub fn parseData(stream: anytype, mode: ParseMode, context: anytype, comptime Errors: type, loader: fn (@TypeOf(context), offset: u32, record: []const u8) Errors!void) !?u32 {
     const Parser = struct {
         entry_point: ?u32,
         current_offset: u32,
 
         _context: @TypeOf(context),
-        _loader: fn (@TypeOf(context), offset: u32, record: []const u8) Errors!void,
+        _loader: std.meta.FnPtr( fn (@TypeOf(context), offset: u32, record: []const u8) Errors!void),
 
         fn load(parser: *@This(), record: Record) Errors!void {
             switch (record) {
