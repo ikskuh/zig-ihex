@@ -53,7 +53,7 @@ pub const Record = union(enum) {
 
 /// Parses intel hex records from the stream, using `mode` as parser configuration.
 /// For each record, `loader` is called with `context` as the first parameter.
-pub fn parseRaw(stream: anytype, mode: ParseMode, context: anytype, comptime Errors: type, loader: fn (@TypeOf(context), record: Record) Errors!void) (Errors || @TypeOf(stream).Error || error{EndOfStream,InvalidCharacter,InvalidRecord,InvalidChecksum}) !void {
+pub fn parseRaw(stream: anytype, mode: ParseMode, context: anytype, comptime Errors: type, loader: fn (@TypeOf(context), record: Record) Errors!void) (Errors || @TypeOf(stream).Error || error{ EndOfStream, InvalidCharacter, InvalidRecord, InvalidChecksum })!void {
     while (true) {
         var b = stream.readByte() catch |err| {
             if (err == error.EndOfStream and !mode.pedantic)
@@ -156,7 +156,7 @@ pub fn parseData(stream: anytype, mode: ParseMode, context: anytype, comptime Er
         current_offset: u32,
 
         _context: @TypeOf(context),
-        _loader: std.meta.FnPtr( fn (@TypeOf(context), offset: u32, record: []const u8) Errors!void),
+        _loader: *const fn (@TypeOf(context), offset: u32, record: []const u8) Errors!void,
 
         fn load(parser: *@This(), record: Record) Errors!void {
             switch (record) {
@@ -232,21 +232,21 @@ const TestVerifier = struct {
 };
 
 test "ihex pedantic" {
-    var stream = std.io.fixedBufferStream(pedanticTestData).reader();
+    var stream = std.io.fixedBufferStream(pedanticTestData);
 
     var verifier = TestVerifier{};
-    try parseRaw(stream, ParseMode{ .pedantic = true }, &verifier, error{ TestUnexpectedResult, TestExpectedEqual }, TestVerifier.process);
+    try parseRaw(stream.reader(), ParseMode{ .pedantic = true }, &verifier, error{ TestUnexpectedResult, TestExpectedEqual }, TestVerifier.process);
 }
 
 test "ihex lax" {
-    var stream = std.io.fixedBufferStream(laxTestData).reader();
+    var stream = std.io.fixedBufferStream(laxTestData);
 
     var verifier = TestVerifier{};
-    try parseRaw(stream, ParseMode{ .pedantic = false }, &verifier, error{ TestUnexpectedResult, TestExpectedEqual }, TestVerifier.process);
+    try parseRaw(stream.reader(), ParseMode{ .pedantic = false }, &verifier, error{ TestUnexpectedResult, TestExpectedEqual }, TestVerifier.process);
 }
 
 test "huge file parseRaw" {
-    var file = try std.fs.cwd().openFile("data/huge.ihex", .{ .read = true, .write = false });
+    var file = try std.fs.cwd().openFile("data/huge.ihex", .{ .mode = .read_only });
     defer file.close();
 
     try parseRaw(file.reader(), ParseMode{ .pedantic = true }, {}, EmptyErrorSet, struct {
@@ -264,15 +264,15 @@ fn ignoreRecords(x: void, offset: u32, data: []const u8) EmptyErrorSet!void {
 }
 
 test "huge file parseData" {
-    var file = try std.fs.cwd().openFile("data/huge.ihex", .{ .read = true, .write = false });
+    var file = try std.fs.cwd().openFile("data/huge.ihex", .{ .mode = .read_only });
     defer file.close();
 
     _ = try parseData(file.reader(), ParseMode{ .pedantic = true }, {}, EmptyErrorSet, ignoreRecords);
 }
 
 test "parseData" {
-    var stream = std.io.fixedBufferStream(pedanticTestData).reader();
-    const ep = try parseData(stream, ParseMode{ .pedantic = true }, {}, EmptyErrorSet, ignoreRecords);
+    var stream = std.io.fixedBufferStream(pedanticTestData);
+    const ep = try parseData(stream.reader(), ParseMode{ .pedantic = true }, {}, EmptyErrorSet, ignoreRecords);
 
     try std.testing.expectEqual(@as(u32, 205), ep.?);
 }
