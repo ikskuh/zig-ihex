@@ -150,7 +150,7 @@ pub fn parseRaw(stream: anytype, mode: ParseMode, context: anytype, comptime Err
 
 /// Parses intel hex data segments from the stream, using `mode` as parser configuration.
 /// For each data record, `loader` is called with `context` as the first parameter.
-pub fn parseData(stream: anytype, mode: ParseMode, context: anytype, comptime Errors: type, loader: fn (@TypeOf(context), offset: u32, record: []const u8) Errors!void) !?u32 {
+pub fn parseData(stream: anytype, mode: ParseMode, context: anytype, comptime Errors: type, loader: *const fn (@TypeOf(context), offset: u32, record: []const u8) Errors!void) !?u32 {
     const Parser = struct {
         entry_point: ?u32,
         current_offset: u32,
