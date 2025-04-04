@@ -1,10 +1,18 @@
 const std = @import("std");
 
-pub fn build(b: *std.build.Builder) void {
-    const mode = b.standardReleaseOptions();
+pub fn build(b: *std.Build) void {
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
 
-    var main_tests = b.addTest("ihex.zig");
-    main_tests.setBuildMode(mode);
+    const ihex_mod = b.addModule("ihex", .{
+        .root_source_file = b.path("ihex.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    var main_tests = b.addTest(.{
+        .root_module = ihex_mod,
+    });
 
     const test_step = b.step("test", "Run library tests");
     test_step.dependOn(&main_tests.step);
