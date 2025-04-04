@@ -55,7 +55,7 @@ pub const Record = union(enum) {
 /// For each record, `loader` is called with `context` as the first parameter.
 pub fn parseRaw(stream: anytype, mode: ParseMode, context: anytype, comptime Errors: type, loader: fn (@TypeOf(context), record: Record) Errors!void) (Errors || @TypeOf(stream).Error || error{ EndOfStream, InvalidCharacter, InvalidRecord, InvalidChecksum })!void {
     while (true) {
-        var b = stream.readByte() catch |err| {
+        const b = stream.readByte() catch |err| {
             if (err == error.EndOfStream and !mode.pedantic)
                 return;
             return err;
@@ -96,7 +96,7 @@ pub fn parseRaw(stream: anytype, mode: ParseMode, context: anytype, comptime Err
         switch (record_type) {
             0x00 => {
                 var temp_data: [255]u8 = undefined;
-                for (temp_data[0..byte_count]) |*c, i| {
+                for (0.., temp_data[0..byte_count]) |i, *c| {
                     c.* = std.fmt.parseInt(u8, line[8 + 2 * i .. 10 + 2 * i], 16) catch return error.InvalidRecord;
                 }
                 const data = Record.Data{
